@@ -1,0 +1,19 @@
+# Dependencies
+node_modules/
+/node_modules/
+
+# TypeScript build output
+dist/
+*.js.map
+*.tsbuildinfo
+
+# Vitest coverage
+coverage/
+
+# Environment
+.env
+.env.local
+
+# OS
+.DS_Store
+Thumbs.db
