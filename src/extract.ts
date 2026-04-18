@@ -56,6 +56,7 @@ export async function extract(
 
   // Retry once on validation failure (bible spec)
   if (!result.ok) {
+    await new Promise(r => setTimeout(r, 5000)); // wait before retry
     result = await _attempt(userPrompt, config);
   }
 

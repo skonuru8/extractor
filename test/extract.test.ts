@@ -103,7 +103,9 @@ describe("validateExtraction", () => {
   it("returns error on malformed JSON", () => {
     const result = validateExtraction("not json at all");
     expect(result.ok).toBe(false);
-    expect(result.error).toMatch(/JSON parse failed/);
+    if (!result.ok) {
+      expect(result.error).toMatch(/JSON parse failed/);
+    }
   });
 
   it("accepts null visa_sponsorship", () => {
