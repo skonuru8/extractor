@@ -54,9 +54,10 @@ export async function extract(
   // First attempt
   let result = await _attempt(userPrompt, config);
 
-  // Retry once on validation failure (bible spec)
+  // Retry once on validation failure (bible spec).
+  // Brief backoff — pipeline-level throttling already spaces requests.
   if (!result.ok) {
-    await new Promise(r => setTimeout(r, 5000)); // wait before retry
+    await new Promise(r => setTimeout(r, 1000));
     result = await _attempt(userPrompt, config);
   }
 
