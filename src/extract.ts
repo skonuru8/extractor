@@ -109,7 +109,13 @@ async function _attempt(
     return { ok: false, error: `LLM call failed: ${e?.message ?? e}` };
   }
 
-  return validateExtraction(raw);
+  const result = validateExtraction(raw);
+  if (!result.ok && process.env.DEBUG_EXTRACT) {
+    // Show truncated raw response so you can diagnose model output issues
+    const preview = raw.length > 500 ? raw.slice(0, 500) + `\n...[${raw.length} chars total]` : raw;
+    process.stderr.write(`[extract] RAW RESPONSE (validation failed):\n${preview}\n`);
+  }
+  return result;
 }
 
 /**

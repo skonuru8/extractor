@@ -54,11 +54,15 @@ VISA SPONSORSHIP:
 // ---------------------------------------------------------------------------
 
 export function buildUserPrompt(descriptionRaw: string): string {
+  const MAX_JD_CHARS = 4000;
+  const truncated = descriptionRaw.length > MAX_JD_CHARS
+    ? descriptionRaw.slice(0, MAX_JD_CHARS) + "\n[truncated]"
+    : descriptionRaw;
   return `Extract structured data from this job description.
 
 JOB DESCRIPTION:
 ---
-${descriptionRaw}
+${truncated}
 ---
 
 Return a JSON object with exactly this shape:
