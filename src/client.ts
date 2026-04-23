@@ -4,9 +4,11 @@
  * Simple fetch-based client. No SDK dependency.
  * OpenRouter uses the OpenAI /chat/completions endpoint format.
  *
- * Note: <think>...</think> blocks are stripped from all responses.
- * Qwen 3.5 Flash always emits them in the response body.
- * Stripping is a no-op for models that don't.
+ * Features:
+ * - Optional `reasoning` passthrough (OpenRouter unified reasoning API).
+ *   Pass { enabled: false } to disable thinking on reasoning models (e.g. Qwen 3.5 Flash).
+ * - <think>...</think> blocks stripped from all responses (safety net if a
+ *   model ignores the reasoning flag).
  */
 
 export interface ChatMessage {
@@ -14,11 +16,19 @@ export interface ChatMessage {
   content: string;
 }
 
+export interface ReasoningConfig {
+  enabled?: boolean;
+  effort?:  "low" | "medium" | "high";
+  exclude?: boolean;
+  max_tokens?: number;
+}
+
 export interface CompletionOptions {
-  model:      string;
-  messages:   ChatMessage[];
-  max_tokens: number;
+  model:       string;
+  messages:    ChatMessage[];
+  max_tokens:  number;
   temperature: number;
+  reasoning?:  ReasoningConfig;
 }
 
 export interface CompletionResult {
@@ -27,11 +37,8 @@ export interface CompletionResult {
 }
 
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
+const REQUEST_TIMEOUT_MS  = 120_000;
 
-  /**
-   * Call OpenRouter chat completions.
-   * Throws on network error or non-2xx response.
-   */
 export async function complete(opts: CompletionOptions): Promise<CompletionResult> {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
@@ -41,6 +48,15 @@ export async function complete(opts: CompletionOptions): Promise<CompletionResul
     );
   }
 
+  const body: Record<string, unknown> = {
+    model:           opts.model,
+    messages:        opts.messages,
+    max_tokens:      opts.max_tokens,
+    temperature:     opts.temperature,
+    response_format: { type: "json_object" },
+  };
+  if (opts.reasoning) body["reasoning"] = opts.reasoning;
+
   const response = await fetch(`${OPENROUTER_BASE_URL}/chat/completions`, {
     method: "POST",
     headers: {
@@ -49,19 +65,13 @@ export async function complete(opts: CompletionOptions): Promise<CompletionResul
       "HTTP-Referer":   "https://github.com/job-hunter",
       "X-Title":        "job-hunter-extractor",
     },
-    body: JSON.stringify({
-      model:           opts.model,
-      messages:        opts.messages,
-      max_tokens:      opts.max_tokens,
-      temperature:     opts.temperature,
-      response_format: { type: "json_object" },
-    }),
-    signal: AbortSignal.timeout(60_000),
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
 
   if (!response.ok) {
-    const body = await response.text().catch(() => "");
-    throw new Error(`OpenRouter API error ${response.status}: ${body}`);
+    const errBody = await response.text().catch(() => "");
+    throw new Error(`OpenRouter API error ${response.status}: ${errBody}`);
   }
 
   const data    = await response.json() as any;
@@ -76,7 +86,7 @@ export async function complete(opts: CompletionOptions): Promise<CompletionResul
   return { content, model };
 }
 
-/** Remove <think>...</think> blocks Qwen models emit in the response body. */
+/** Remove <think>...</think> blocks. Qwen emits them even with JSON mode. */
 function stripThinkBlocks(text: string): string {
   return text.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
 }

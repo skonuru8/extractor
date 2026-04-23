@@ -9,7 +9,7 @@
  * - Pin model + prompt version on every result
  */
 
-import { complete }                          from "./client";
+import { complete, ReasoningConfig }         from "./client";
 import { SYSTEM_PROMPT, buildUserPrompt, PROMPT_VERSION } from "./prompt";
 import { validateExtraction, ValidatedFields } from "./validate";
 import { ExtractionResult, ExtractedFields }   from "./types";
@@ -19,6 +19,7 @@ export interface ExtractorConfig {
   model:       string;
   max_tokens:  number;
   temperature: number;
+  reasoning?:  ReasoningConfig;
 }
 
 // ---------------------------------------------------------------------------
@@ -95,16 +96,7 @@ async function _attempt(
 ): Promise<{ ok: true; data: ValidatedFields } | { ok: false; error: string }> {
   let raw: string;
   try {
-    const completion = await complete({
-      model:       config.model,
-      max_tokens:  config.max_tokens,
-      temperature: config.temperature,
-      messages: [
-        { role: "system", content: SYSTEM_PROMPT },
-        { role: "user",   content: userPrompt },
-      ],
-    });
-    raw = completion.content;
+    raw = await _callWithRetry(userPrompt, config);
   } catch (e: any) {
     return { ok: false, error: `LLM call failed: ${e?.message ?? e}` };
   }
@@ -116,6 +108,31 @@ async function _attempt(
     process.stderr.write(`[extract] RAW RESPONSE (validation failed):\n${preview}\n`);
   }
   return result;
+}
+
+// One HTTP-level retry for transient errors (timeout, 5xx, network).
+// Validation retries happen at the extract() level; this is strictly network resilience.
+async function _callWithRetry(userPrompt: string, config: ExtractorConfig): Promise<string> {
+  const messages = [
+    { role: "system" as const, content: SYSTEM_PROMPT },
+    { role: "user" as const,   content: userPrompt },
+  ];
+  const call = () => complete({
+    model:       config.model,
+    max_tokens:  config.max_tokens,
+    temperature: config.temperature,
+    messages,
+    ...(config.reasoning ? { reasoning: config.reasoning } : {}),
+  });
+
+  try {
+    const res = await call();
+    return res.content;
+  } catch (e) {
+    await new Promise(r => setTimeout(r, 2000));
+    const res = await call();
+    return res.content;
+  }
 }
 
 /**
